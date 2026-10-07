@@ -17,6 +17,7 @@ void Face::update() {
   switch (currentEmotion) {
     case HAPPY:   drawHappy(); break;
     case DIZZY:   drawDizzy(); break;
+    case SLEEPY:  drawSleepy(); break;
     case NEUTRAL: 
     default:      drawNeutral(); break;
   }
@@ -40,4 +41,8 @@ void Face::drawDizzy() {
   display.drawLine(50, 20, 25, 45, SSD1306_WHITE);
   display.drawLine(78, 20, 103, 45, SSD1306_WHITE);
   display.drawLine(103, 20, 78, 45, SSD1306_WHITE);
+}
+
+void Face::draySleepy(){
+  // Da implementare
 }

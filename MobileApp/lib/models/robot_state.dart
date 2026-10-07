@@ -1,16 +1,18 @@
 import 'task_item.dart';
 
-enum RobotExpression { happy, focus, sleep }
+enum RobotExpression { neutral, happy, dizzy, sleepy }
 
 extension RobotExpressionExtension on RobotExpression {
   String get code {
     switch (this) {
       case RobotExpression.happy:
         return 'HAPPY';
-      case RobotExpression.focus:
-        return 'FOCUS';
-      case RobotExpression.sleep:
-        return 'SLEEP';
+      case RobotExpression.neutral:
+        return 'NEUTRAL';
+      case RobotExpression.sleepy:
+        return 'SLEEPY';
+      case RobotExpression.dizzy:
+        return 'DIZZY';
     }
   }
 
@@ -18,10 +20,12 @@ extension RobotExpressionExtension on RobotExpression {
     switch (this) {
       case RobotExpression.happy:
         return '😊 Felice';
-      case RobotExpression.focus:
-        return '🧐 Studio';
-      case RobotExpression.sleep:
+      case RobotExpression.neutral:
+        return '🙂 Neutrale';
+      case RobotExpression.sleepy:
         return '😴 Sonno';
+      case RobotExpression.dizzy:
+        return '🤢 Nauseato';
     }
   }
 }
@@ -31,7 +35,7 @@ class RobotState {
   List<TaskItem> tasks;
 
   RobotState({
-    this.expression = RobotExpression.happy,
+    this.expression = RobotExpression.neutral,
     List<TaskItem>? tasks,
   }) : tasks = tasks ?? [];
 
