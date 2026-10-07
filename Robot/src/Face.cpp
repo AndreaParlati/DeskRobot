@@ -1,48 +1,122 @@
 #include "Face.h"
 
-Face::Face(Adafruit_SSD1306 &disp) : display(disp), currentEmotion(NEUTRAL) {}
+static LGFX* displayPtr = nullptr;
+
+static void GIFDraw(GIFDRAW *pDraw) {
+    if (pDraw->y >= 240 || displayPtr == nullptr) return;
+
+    uint16_t *usPalette = pDraw->pPalette;
+    uint16_t usTemp[240];
+    uint8_t *p = pDraw->pPixels;
+    int iWidth = pDraw->iWidth;
+
+    if (iWidth > 240) iWidth = 240;
+
+    for (int x = 0; x < iWidth; x++) {
+        uint8_t c = p[x];
+        if (c == pDraw->ucTransparent) {
+            usTemp[x] = TFT_BLACK;
+        } else {
+            usTemp[x] = usPalette[c];
+        }
+    }
+
+    displayPtr->pushImage(pDraw->iX, pDraw->y + pDraw->iY, iWidth, 1, usTemp);
+}
+
+static void * GIFOpenFile(const char *fname, int32_t *pSize) {
+    fs::File f = LittleFS.open(fname, "r");
+    if (f) {
+        *pSize = f.size();
+        return new fs::File(f);
+    }
+    return NULL;
+}
+
+static void GIFCloseFile(void *pHandle) {
+    fs::File *f = (fs::File *)pHandle;
+    if (f) {
+        f->close();
+        delete f;
+    }
+}
+
+static int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen) {
+    fs::File *f = (fs::File *)pFile->fHandle;
+    if (f) return f->read(pBuf, iLen);
+    return 0;
+}
+
+static int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition, int iWhence) {
+    fs::File *f = (fs::File *)pFile->fHandle;
+    if (f) {
+        f->seek(iPosition, (SeekMode)iWhence);
+        return f->position();
+    }
+    return 0;
+}
+
+// --- CLASSE FACE ---
+
+Face::Face(LGFX &disp) 
+    : display(disp), 
+      currentEmotion(NEUTRAL), 
+      nextEmotion(NEUTRAL), 
+      activeGifEmotion((Emotion)-1) {
+    displayPtr = &display;
+}
 
 void Face::begin() {
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  display.clearDisplay();
-  display.display();
+    display.init();
+    display.setRotation(0);
+    display.setBrightness(255);
+    display.fillScreen(TFT_BLACK);
+
+    if (!LittleFS.begin(true)) {
+        Serial.println("Errore: impossibile montare LittleFS!");
+    }
+
+    gif.begin(LITTLE_ENDIAN_PIXELS);
+    openGifForEmotion(currentEmotion);
 }
 
 void Face::setEmotion(Emotion newEmotion) {
-  currentEmotion = newEmotion;
+    // Registra la richiesta, ma NON interrompe la GIF corrente
+    nextEmotion = newEmotion;
+}
+
+void Face::openGifForEmotion(Emotion emo) {
+    gif.close();
+    const char* filename = "/animations/neutral.gif";
+
+    switch (emo) {
+        case HAPPY:  filename = "/animations/happy.gif"; break;
+        case DIZZY:  filename = "/animations/dizzy.gif"; break;
+        case SLEEPY: filename = "/animations/sleepy.gif"; break;
+        case NEUTRAL:
+        default:     filename = "/animations/neutral.gif"; break;
+    }
+
+    if (gif.open(filename, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
+        activeGifEmotion = emo;
+        currentEmotion = emo;
+    } else {
+        Serial.printf("Errore nell'apertura della GIF: %s\n", filename);
+    }
 }
 
 void Face::update() {
-  display.clearDisplay();
-  switch (currentEmotion) {
-    case HAPPY:   drawHappy(); break;
-    case DIZZY:   drawDizzy(); break;
-    case SLEEPY:  drawSleepy(); break;
-    case NEUTRAL: 
-    default:      drawNeutral(); break;
-  }
-  display.display();
-}
+    // Riproduce un singolo frame della GIF corrente
+    int hasMoreFrames = gif.playFrame(true, NULL);
 
-void Face::drawNeutral() {
-  display.fillRoundRect(25, 20, 25, 30, 8, SSD1306_WHITE);
-  display.fillRoundRect(78, 20, 25, 30, 8, SSD1306_WHITE);
-}
-
-void Face::drawHappy() {
-  display.fillCircle(37, 35, 15, SSD1306_WHITE);
-  display.fillCircle(37, 40, 15, SSD1306_BLACK);
-  display.fillCircle(90, 35, 15, SSD1306_WHITE);
-  display.fillCircle(90, 40, 15, SSD1306_BLACK);
-}
-
-void Face::drawDizzy() {
-  display.drawLine(25, 20, 50, 45, SSD1306_WHITE);
-  display.drawLine(50, 20, 25, 45, SSD1306_WHITE);
-  display.drawLine(78, 20, 103, 45, SSD1306_WHITE);
-  display.drawLine(103, 20, 78, 45, SSD1306_WHITE);
-}
-
-void Face::draySleepy(){
-  // Da implementare
+    // Se la GIF ha raggiunto l'ultimo frame (hasMoreFrames == 0)
+    if (!hasMoreFrames) {
+        // Se c'è una nuova emozione in coda, la carica ora che quella vecchia è finita
+        if (nextEmotion != currentEmotion) {
+            openGifForEmotion(nextEmotion);
+        } else {
+            // Altrimenti riavvia la stessa GIF per mantenerla in loop fluido
+            gif.reset();
+        }
+    }
 }

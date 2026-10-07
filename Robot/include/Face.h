@@ -1,30 +1,33 @@
 #ifndef FACE_H
 #define FACE_H
 
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#define LGFX_USE_V1
+#include <LovyanGFX.hpp>
+#include <LittleFS.h>
+#include <AnimatedGIF.h>
 
 enum Emotion {
-  NEUTRAL,
-  HAPPY,
-  DIZZY,
-  SLEEPY
+    NEUTRAL,
+    HAPPY,
+    DIZZY,
+    SLEEPY
 };
 
 class Face {
 private:
-  Adafruit_SSD1306 &display;
-  Emotion currentEmotion;
+    LGFX& display;
+    AnimatedGIF gif;
+    Emotion currentEmotion;
+    Emotion nextEmotion;      // La nuova emozione in attesa che la corrente finisca
+    Emotion activeGifEmotion; // L'emozione attualmente in riproduzione sullo schermo
 
-  void drawNeutral();
-  void drawHappy();
-  void drawDizzy();
+    void openGifForEmotion(Emotion emo);
 
 public:
-  explicit Face(Adafruit_SSD1306 &disp);
-  void begin();
-  void setEmotion(Emotion newEmotion);
-  void update();
+    Face(LGFX& disp);
+    void begin();
+    void setEmotion(Emotion newEmotion);
+    void update();
 };
 
-#endif
+#endif // FACE_H
