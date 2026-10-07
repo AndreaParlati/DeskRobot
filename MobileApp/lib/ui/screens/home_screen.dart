@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../models/task_item.dart';
 import '../../models/robot_state.dart';
@@ -18,25 +19,36 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _ssidController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  RobotExpression _selectedExpression = RobotExpression.values.first;
+  RobotExpression _currentExpression = RobotExpression.neutral;
   bool _isSyncing = false;
+  Timer? _autoSyncTimer; // Timer per il polling automatico
 
-  List<TaskItem> _tasks = [
-    TaskItem(id: '1', title: 'Saluta il tuo nuovo amico :)')
-  ];
+  List<TaskItem> _tasks = [];
 
   @override
   void initState() {
     super.initState();
     _loadSavedHost();
+    
+    // 2. Avvia la sincronizzazione automatica ogni 5 secondi
+    _startAutoSync();
   }
 
   @override
   void dispose() {
+    // 3. Cancella sempre il timer prima di distruggere il widget
+    _autoSyncTimer?.cancel();
     _hostController.dispose();
     _ssidController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _startAutoSync() {
+    _autoSyncTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      // Sincronizza in background senza mostrare la SnackBar di notifica
+      _syncWithRobot(showSnackBar: false);
+    });
   }
 
   Future<void> _loadSavedHost() async {
@@ -46,7 +58,11 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _syncWithRobot() async {
+  // Modificato per accettare un parametro opzionale showSnackBar (default: true per il tasto manuale)
+  Future<void> _syncWithRobot({bool showSnackBar = true}) async {
+    // Evita di accavallare più richieste se una è già in corso
+    if (_isSyncing) return;
+
     setState(() {
       _isSyncing = true;
     });
@@ -56,29 +72,34 @@ class _HomeScreenState extends State<HomeScreen> {
       await Esp32Service.saveHost(currentHost);
     }
 
-    // Convertiamo l'enum RobotExpression in String (.name) per Esp32Service
-    bool success = await Esp32Service.updateRobotState(
-      expression: _selectedExpression.name,
+    RobotExpression? updatedExpression = await Esp32Service.updateRobotState(
       tasks: _tasks,
     );
 
-    setState(() {
-      _isSyncing = false;
-    });
-
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          success
-              ? 'Sincronizzazione completata con successo! 🌸'
-              : 'Errore di connessione con il DeskRobot 😞',
+    setState(() {
+      _isSyncing = false;
+      if (updatedExpression != null) {
+        _currentExpression = updatedExpression;
+      }
+    });
+
+    // Mostra la SnackBar solo se richiesto (es. quando si preme il pulsante manuale)
+    if (showSnackBar) {
+      final bool success = updatedExpression != null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Sincronizzazione completata! Stato robot aggiornato 🌸'
+                : 'Errore di connessione con il DeskRobot 😞',
+          ),
+          backgroundColor: success ? const Color(0xFFB56576) : Colors.redAccent,
+          duration: const Duration(seconds: 2),
         ),
-        backgroundColor: success ? const Color(0xFFB56576) : Colors.redAccent,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+      );
+    }
   }
 
   void _openWifiDialog() {
@@ -205,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   : const Icon(Icons.sync_rounded),
               tooltip: "Sincronizza Robot",
-              onPressed: _syncWithRobot,
+              onPressed: () => _syncWithRobot(showSnackBar: true),
             )
           ],
         ),
@@ -224,7 +245,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: const Color(0xFFFFB5A7).withOpacity(0.5),
                     width: 1.5,
                   ),
-                )
+                ),
+                child: const Row(
+                  children: [
+                    Text("🌺", style: TextStyle(fontSize: 28)),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        "Gestisci il tuo DeskRobot in un ambiente fiorito!",
+                        style: TextStyle(
+                          color: Color(0xFF6D597A),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
 
@@ -234,13 +271,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 20),
 
-              ExpressionSelector(
-                selectedExpression: _selectedExpression,
-                onExpressionSelected: (newExp) {
-                  setState(() {
-                    _selectedExpression = newExp;
-                  });
-                },
+              CurrentEmotionCard(
+                currentExpression: _currentExpression,
               ),
               const SizedBox(height: 20),
 
@@ -250,6 +282,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   setState(() {
                     _tasks = newTasks;
                   });
+                  // Sincronizza subito con l'ESP32 quando l'utente modifica la lista dei task
+                  _syncWithRobot(showSnackBar: false);
                 },
               ),
               const SizedBox(height: 24),
