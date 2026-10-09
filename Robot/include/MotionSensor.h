@@ -1,22 +1,28 @@
 #ifndef MOTION_SENSOR_H
 #define MOTION_SENSOR_H
 
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
+#include <Arduino.h>
+#include <Wire.h>
 
 class MotionSensor {
 private:
-  Adafruit_MPU6050 mpu;
-  float shakeThreshold;
-  bool initialized;
+    uint8_t sdaPin;
+    uint8_t sclPin;
+    uint8_t i2cAddress;
+    float shakeThreshold;       // Soglia dell'accelerazione per rilevare lo scuotimento (m/s^2)
+    unsigned long cooldownMs;   // Cooldown per evitare letture doppie
+    unsigned long lastShakeTime;
+    bool initialized;
+
+    // Metodi interni per lettura I2C diretta dei dati dell'accelerometro
+    int16_t readRegister16(uint8_t reg);
 
 public:
-  explicit MotionSensor(float threshold = 18.0f);
-  
-  bool begin();
-  bool isShaken();
-  float getPitch(); // Inclinazione avanti/dietro
-  float getRoll();  // Inclinazione destra/sinistra
+    MotionSensor(uint8_t sda = 1, uint8_t scl = 2, float threshold = 18.0f, unsigned long cooldown = 2000);
+    
+    bool begin();
+    bool isShaken();
+    void setThreshold(float threshold) { shakeThreshold = threshold; }
 };
 
-#endif
+#endif // MOTION_SENSOR_H

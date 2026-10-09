@@ -1,54 +1,54 @@
 #include <Arduino.h>
-#include "BuzzerPlayer.h"
+#include "MotionSensor.h"
 
-// Pin del buzzer passivo (GPIO 18)
-#define BUZZER_PIN 18
+// Definizione dei pin I2C dell'ESP32-S3
+#define SDA_PIN 1
+#define SCL_PIN 2
 
-BuzzerPlayer buzzer(BUZZER_PIN);
+// Istanza del sensore:
+// - SDA: GPIO 1
+// - SCL: GPIO 2
+// - Soglia di scuotimento: 18.0 m/s^2 (circa 1.8g, rilevabile quando agiti la scheda)
+// - Cooldown: 2000 ms tra un rilevamento e l'altro
+MotionSensor motion(SDA_PIN, SCL_PIN, 18.0f, 2000);
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+    // Attende la connessione del Monitor Seriale per un massimo di 3 secondi
+  unsigned long start = millis();
+  while (!Serial && (millis() - start < 3000)) {
+    delay(10);
+  }
 
-  Serial.println("\n==============================================");
-  Serial.println("   ESP32-S3: TEST AUDIO BUZZER PASSIVO        ");
-  Serial.println("==============================================\n");
+  delay(500); // Piccola pausa di stabilizzazione
 
-  // Inizializza il pin del buzzer
-  buzzer.begin();
+  Serial.println("\n===============================================");
+  Serial.println("  ESP32-S3: TEST RILEVAMENTO MPU-9250 / 6500   ");
+  Serial.println("===============================================\n");
+
+  // Inizializza la comunicazione I2C con il sensore
+  if (!motion.begin()) {
+    Serial.println("[ERRORE] Sensore non trovato!");
+    Serial.println("Verifica i collegamenti:");
+    Serial.println(" - VCC -> 3.3V (o 5V)");
+    Serial.println(" - GND -> GND");
+    Serial.println(" - SDA -> GPIO 1");
+    Serial.println(" - SCL -> GPIO 2");
+    
+    // Blocca l'esecuzione in caso di errore di collegamento
+    while (1) {
+      delay(500);
+    }
+  }
+
+  Serial.println(">>> Sensore pronto! Muovi o agita il sensore per testare...");
 }
 
 void loop() {
-  Serial.println(">>> 1. TEST EFFETTI SONORI PER EMOZIONI <<<");
+  // Controlla se il sensore viene agitato
+  if (motion.isShaken()) {
+    Serial.println("⚡ [EVENTO DETECTED] ROBOT AGITATO! -> Set Emozione: DIZZY");
+  }
 
-  Serial.println(" -> Emozione: NEUTRAL");
-  buzzer.playNeutralSound();
-  delay(2000);
-
-  Serial.println(" -> Emozione: HAPPY");
-  buzzer.playHappyBeep();
-  delay(2000);
-
-  Serial.println(" -> Emozione: DIZZY");
-  buzzer.playDizzySound();
-  delay(2000);
-
-  Serial.println(" -> Emozione: SLEEPY");
-  buzzer.playSleepySound();
-  delay(3000);
-
-  Serial.println("\n>>> 2. TEST TEMI MUSICALI COMPLETI <<<");
-
-  Serial.println(" -> Riproduzione: Super Mario Bros Theme...");
-  buzzer.playMarioTheme();
-  delay(3000);
-
-  Serial.println(" -> Riproduzione: Star Wars Main Theme...");
-  buzzer.playStarWarsTheme();
-  delay(4000);
-
-  Serial.println("\n----------------------------------------------");
-  Serial.println(" Fine ciclo di test. Riavvio sequenza tra 5s ");
-  Serial.println("----------------------------------------------\n");
-  delay(5000);
+  delay(50); // Piccola pausa per non saturare la CPU
 }
