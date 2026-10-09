@@ -41,7 +41,7 @@ public:
     }
 };
 
-enum Emotion { NEUTRAL, HAPPY, DIZZY, SLEEPY, SLEEP };
+enum Emotion { NEUTRAL, HAPPY, DIZZY, SLEEPY};
 
 class Face {
 private:

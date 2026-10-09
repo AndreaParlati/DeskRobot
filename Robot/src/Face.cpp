@@ -109,8 +109,7 @@ void Face::openGifForEmotion(Emotion emo) {
     switch (emo) {
         case HAPPY:  filename = "/animations/happy.gif"; break;
         case DIZZY:  filename = "/animations/dizzy.gif"; break;
-        case SLEEPY:
-        case SLEEP:  filename = "/animations/sleepy.gif"; break;
+        case SLEEPY:  filename = "/animations/sleepy.gif"; break;
         case NEUTRAL:
         default:     filename = "/animations/neutral.gif"; break;
     }
