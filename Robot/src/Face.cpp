@@ -1,87 +1,104 @@
 #include "Face.h"
 
-static LGFX* displayPtr = nullptr;
+// Usiamo variabili statiche come nel main funzionante
+static Face* faceInstance = nullptr;
+static File gifFile;
 
+// --- CALLBACK DI DECODIFICA GIF IDENTICA AL MAIN ---
 static void GIFDraw(GIFDRAW *pDraw) {
-    if (pDraw->y >= 240 || displayPtr == nullptr) return;
+    if (faceInstance == nullptr) return;
+    
+    LGFX_Sprite& canvas = faceInstance->getCanvas();
+    uint8_t *s;
+    uint16_t *palette;
+    int x, y, iWidth;
 
-    uint16_t *usPalette = pDraw->pPalette;
-    uint16_t usTemp[240];
-    uint8_t *p = pDraw->pPixels;
-    int iWidth = pDraw->iWidth;
+    iWidth = pDraw->iWidth;
+    if (iWidth + pDraw->iX > 240)
+        iWidth = 240 - pDraw->iX;
 
-    if (iWidth > 240) iWidth = 240;
+    pDraw->y += pDraw->iY;
+    if (pDraw->y >= 240)
+        return;
 
-    for (int x = 0; x < iWidth; x++) {
-        uint8_t c = p[x];
-        if (c == pDraw->ucTransparent) {
-            usTemp[x] = TFT_BLACK;
-        } else {
-            usTemp[x] = usPalette[c];
+    palette = (uint16_t *)pDraw->pPalette;
+    x = pDraw->iX;
+    y = pDraw->y;
+    s = pDraw->pPixels;
+
+    if (pDraw->ucHasTransparency) {
+        uint8_t ucTransparent = pDraw->ucTransparent;
+        for (int i = 0; i < iWidth; i++) {
+            if (s[i] != ucTransparent) {
+                canvas.drawPixel(x + i, y, palette[s[i]]);
+            }
+        }
+    } else {
+        for (int i = 0; i < iWidth; i++) {
+            canvas.drawPixel(x + i, y, palette[s[i]]);
         }
     }
-
-    displayPtr->pushImage(pDraw->iX, pDraw->y + pDraw->iY, iWidth, 1, usTemp);
 }
 
-static void * GIFOpenFile(const char *fname, int32_t *pSize) {
-    fs::File f = LittleFS.open(fname, "r");
-    if (f) {
-        *pSize = f.size();
-        return new fs::File(f);
-    }
-    return NULL;
+// --- CALLBACK FILESYSTEM IDENTICHE AL MAIN ---
+static void *GIFOpenFile(const char *fname, int32_t *pSize) {
+    gifFile = LittleFS.open(fname, "r");
+    if (!gifFile) return NULL;
+    *pSize = gifFile.size();
+    return (void *)&gifFile;
 }
 
 static void GIFCloseFile(void *pHandle) {
-    fs::File *f = (fs::File *)pHandle;
-    if (f) {
-        f->close();
-        delete f;
-    }
+    File *f = (File *)pHandle;
+    if (f) f->close();
 }
 
 static int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen) {
-    fs::File *f = (fs::File *)pFile->fHandle;
-    if (f) return f->read(pBuf, iLen);
-    return 0;
+    File *f = (File *)pFile->fHandle;
+    int32_t iBytesRead = f->read(pBuf, iLen);
+    pFile->iPos = f->position();
+    return iBytesRead;
 }
 
-static int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition, int iWhence) {
-    fs::File *f = (fs::File *)pFile->fHandle;
-    if (f) {
-        f->seek(iPosition, (SeekMode)iWhence);
-        return f->position();
-    }
-    return 0;
+static int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition) {
+    File *f = (File *)pFile->fHandle;
+    f->seek(iPosition, SeekSet);
+    pFile->iPos = f->position();
+    return pFile->iPos;
 }
 
 // --- CLASSE FACE ---
 
 Face::Face(LGFX &disp) 
     : display(disp), 
+      canvas(&disp),
       currentEmotion(NEUTRAL), 
       nextEmotion(NEUTRAL), 
       activeGifEmotion((Emotion)-1) {
-    displayPtr = &display;
+    faceInstance = this;
 }
 
 void Face::begin() {
     display.init();
     display.setRotation(0);
-    display.setBrightness(255);
-    display.fillScreen(TFT_BLACK);
+
+    // Inizializzazione Sprite e PSRAM come nel main
+    canvas.setColorDepth(16);
+    canvas.setPsram(true);
+    canvas.createSprite(240, 240);
+    canvas.fillScreen(TFT_BLACK);
 
     if (!LittleFS.begin(true)) {
-        Serial.println("Errore: impossibile montare LittleFS!");
+        Serial.println("[LittleFS] Errore di montaggio del filesystem!");
+        return;
     }
 
-    gif.begin(LITTLE_ENDIAN_PIXELS);
+    // Palette per ST7789 come nel main
+    gif.begin(GIF_PALETTE_RGB565_LE);
     openGifForEmotion(currentEmotion);
 }
 
 void Face::setEmotion(Emotion newEmotion) {
-    // Registra la richiesta, ma NON interrompe la GIF corrente
     nextEmotion = newEmotion;
 }
 
@@ -92,7 +109,8 @@ void Face::openGifForEmotion(Emotion emo) {
     switch (emo) {
         case HAPPY:  filename = "/animations/happy.gif"; break;
         case DIZZY:  filename = "/animations/dizzy.gif"; break;
-        case SLEEPY: filename = "/animations/sleepy.gif"; break;
+        case SLEEPY:
+        case SLEEP:  filename = "/animations/sleepy.gif"; break;
         case NEUTRAL:
         default:     filename = "/animations/neutral.gif"; break;
     }
@@ -101,22 +119,37 @@ void Face::openGifForEmotion(Emotion emo) {
         activeGifEmotion = emo;
         currentEmotion = emo;
     } else {
-        Serial.printf("Errore nell'apertura della GIF: %s\n", filename);
+        Serial.printf("[GIF] Errore nell'apertura della GIF: %s\n", filename);
     }
 }
 
 void Face::update() {
-    // Riproduce un singolo frame della GIF corrente
-    int hasMoreFrames = gif.playFrame(true, NULL);
+    int delayMs = 0;
+    
+    // Decodifica il frame e legge il ritardo nativo della GIF
+    int hasMoreFrames = gif.playFrame(false, &delayMs);
 
-    // Se la GIF ha raggiunto l'ultimo frame (hasMoreFrames == 0)
+    // Invia il canvas al display via DMA alla massima velocità
+    display.startWrite();
+    canvas.pushSprite(0, 0);
+    display.endWrite();
+
     if (!hasMoreFrames) {
-        // Se c'è una nuova emozione in coda, la carica ora che quella vecchia è finita
         if (nextEmotion != currentEmotion) {
             openGifForEmotion(nextEmotion);
         } else {
-            // Altrimenti riavvia la stessa GIF per mantenerla in loop fluido
             gif.reset();
         }
+    }
+
+    // AUMENTO FPS: Moltiplica il delay per un fattore inferiore a 1.0.
+    // Esempio: 0.35 = ~3x più veloce (FPS quasi triplicati)
+    float speedFactor = 0.35; 
+    int fastDelay = delayMs * speedFactor;
+
+    if (fastDelay > 0) {
+        delay(fastDelay);
+    } else {
+        vTaskDelay(1); // Micro-pausa per evitare il blocco del Watchdog
     }
 }
