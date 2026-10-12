@@ -1,0 +1,15 @@
+# File di lock di KiCad
+*.kicad_sch.lck
+*.kicad_pcb.lck
+
+# File di backup automatici
+*-backups/
+*.bak
+#auto_save_d_files#
+
+# Cache di KiCad
+fp-info-cache
+sym-lib-table
+
+*.zip
+\#auto_saved_files\#
